@@ -8,18 +8,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Vercel requires a top-level FastAPI instance named "app"
-app = FastAPI(
-    title="eShopCo Telemetry API",
-    version="1.0.0",
-)
+app = FastAPI()
 
 # Enable CORS
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
+CORSMiddleware,
+allow_origins=["*"],
+allow_methods=["POST", "GET", "OPTIONS"],
+allow_headers=["Content-Type", "Authorization"],
+expose_headers=["Access-Control-Allow-Origin"],
 )
 
 # Locate telemetry.jsonl in the same directory as index.py
