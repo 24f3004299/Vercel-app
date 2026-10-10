@@ -1,4 +1,4 @@
-```python
+
 import json
 from pathlib import Path
 
@@ -120,4 +120,3 @@ def calculate_metrics(request: MetricsRequest):
 
     # The response must contain a top-level "regions" object.
     return {"regions": regions_result}
-```
