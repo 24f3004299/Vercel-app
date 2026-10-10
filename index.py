@@ -3,17 +3,17 @@ import json
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI()
 
-# Allow POST requests from any origin
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "OPTIONS"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -30,9 +30,20 @@ def home():
     return {"message": "eShopCo telemetry API is running"}
 
 
+@app.options("/")
+def options_root():
+    return Response(
+        status_code=204,
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        },
+    )
+
+
 @app.post("/")
 def calculate_metrics(request: MetricsRequest):
-    # Load the JSON array
     try:
         with DATA_FILE.open("r", encoding="utf-8") as f:
             records = json.load(f)
