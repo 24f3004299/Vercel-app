@@ -3,25 +3,74 @@ import json
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI()
+# Vercel requires a top-level FastAPI instance named "app"
+app = FastAPI(
+    title="eShopCo Telemetry API",
+    version="1.0.0",
+)
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
-DATA_FILE = Path(__file__).with_name("telemetry.jsonl")
+# Locate telemetry.jsonl in the same directory as index.py
+DATA_FILE = Path(__file__).parent / "telemetry.jsonl"
 
 
 class MetricsRequest(BaseModel):
     regions: list[str]
-    threshold_ms: float = 180
+    threshold_ms: float = 180.0
+
+
+def load_records():
+    """Load either a JSON array or newline-delimited JSON records."""
+    try:
+        content = DATA_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="Telemetry data file not found",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=500,
+            detail="Telemetry data file is empty",
+        )
+
+    try:
+        # Your supplied data is a JSON array.
+        records = json.loads(content)
+    except json.JSONDecodeError:
+        # Also support genuine JSON Lines files.
+        try:
+            records = [
+                json.loads(line)
+                for line in content.splitlines()
+                if line.strip()
+            ]
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500,
+                detail="Telemetry file contains invalid JSON",
+            )
+
+    if not isinstance(records, list):
+        raise HTTPException(
+            status_code=500,
+            detail="Telemetry data must contain a list of records",
+        )
+
+    return records
 
 
 @app.get("/")
@@ -29,43 +78,17 @@ def home():
     return {"message": "eShopCo telemetry API is running"}
 
 
-@app.options("/")
-def options_root():
-    return Response(
-        status_code=204,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-        },
-    )
-
-
 @app.post("/")
 def calculate_metrics(request: MetricsRequest):
-    try:
-        with DATA_FILE.open("r", encoding="utf-8") as f:
-            records = json.load(f)
-
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=500,
-            detail="Telemetry data file not found",
-        )
-
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=500,
-            detail="Telemetry file contains invalid JSON",
-        )
-
+    records = load_records()
     regions_result = {}
 
     for region in request.regions:
         rows = [
             record
             for record in records
-            if record["region"].lower() == region.lower()
+            if str(record.get("region", "")).lower()
+            == region.lower()
         ]
 
         if not rows:
@@ -74,13 +97,20 @@ def calculate_metrics(request: MetricsRequest):
                 detail=f"No records found for region: {region}",
             )
 
-        latencies = np.array(
-            [float(record["latency_ms"]) for record in rows]
-        )
-
-        uptimes = np.array(
-            [float(record["uptime_pct"]) for record in rows]
-        )
+        try:
+            latencies = np.array(
+                [float(record["latency_ms"]) for record in rows],
+                dtype=float,
+            )
+            uptimes = np.array(
+                [float(record["uptime_pct"]) for record in rows],
+                dtype=float,
+            )
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid telemetry record for region: {region}",
+            )
 
         regions_result[region] = {
             "avg_latency": float(np.mean(latencies)),
@@ -91,5 +121,6 @@ def calculate_metrics(request: MetricsRequest):
             ),
         }
 
+    # The response must contain a top-level "regions" object.
     return {"regions": regions_result}
 ```
